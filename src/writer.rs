@@ -132,7 +132,11 @@ impl<W: Write> TorrentZipWriter<W> {
 
             let header = LocalFileHeader::new_torrentzip(entry.name.len() as u16)
                 .with_general_flag(entry.general_flag)
-                .with_sizes(entry.crc32, entry.compressed.len() as u32, entry.uncompressed_size);
+                .with_sizes(
+                    entry.crc32,
+                    entry.compressed.len() as u32,
+                    entry.uncompressed_size,
+                );
 
             out.write_all(&header.to_bytes())?;
             out.write_all(entry.name.as_bytes())?;
@@ -152,7 +156,11 @@ impl<W: Write> TorrentZipWriter<W> {
         for (entry, &local_offset) in self.entries.iter().zip(&local_offsets) {
             let header = CentralDirHeader::new_torrentzip(entry.name.len() as u16, local_offset)
                 .with_general_flag(entry.general_flag)
-                .with_sizes(entry.crc32, entry.compressed.len() as u32, entry.uncompressed_size);
+                .with_sizes(
+                    entry.crc32,
+                    entry.compressed.len() as u32,
+                    entry.uncompressed_size,
+                );
 
             let mut chunk = Vec::with_capacity(CentralDirHeader::SIZE + entry.name.len());
             chunk.extend_from_slice(&header.to_bytes());

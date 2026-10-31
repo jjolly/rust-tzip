@@ -114,9 +114,9 @@ impl LocalFileHeader {
             compression_method: COMPRESSION_METHOD_DEFLATE,
             last_mod_time: DOS_TIME,
             last_mod_date: DOS_DATE,
-            crc32: 0,         // Set after compression
-            compressed_size: 0,    // Set after compression
-            uncompressed_size: 0,  // Set after compression
+            crc32: 0,             // Set after compression
+            compressed_size: 0,   // Set after compression
+            uncompressed_size: 0, // Set after compression
             filename_len,
             extra_len: 0,
         }

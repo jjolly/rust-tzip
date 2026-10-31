@@ -18,4 +18,3 @@ pub fn compute_central_directory_crc32(cd_data: &[u8]) -> u32 {
     hasher.update(cd_data);
     hasher.finalize()
 }
-
