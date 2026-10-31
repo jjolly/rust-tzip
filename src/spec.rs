@@ -21,6 +21,27 @@ pub const DOS_TIME: u16 = 0xBC00;
 /// Bit 1 (0x0002): Maximum compression flag - set for DEFLATE level 9
 pub const GENERAL_PURPOSE_FLAG: u16 = 0x0002;
 
+/// Language encoding flag (EFS), ZIP APPNOTE 6.3.0 bit 11.
+///
+/// When set, the filename (and comment) are encoded in UTF-8; readers
+/// otherwise default to CP437, which garbles CJK/Cyrillic/accented names.
+pub const UTF8_ENCODING_FLAG: u16 = 0x0800;
+
+/// General purpose flag for a given entry name.
+///
+/// ASCII names keep the legacy trrntzip flag (0x0002) so archives stay
+/// **byte-identical** to the reference implementation — changing the flag
+/// would change every header byte and with them the torrent piece hashes of
+/// every existing TorrentZip archive. Non-ASCII names additionally set bit 11
+/// so standard ZIP tools decode them as UTF-8 instead of CP437.
+pub fn general_purpose_flag_for(name: &str) -> u16 {
+    if name.is_ascii() {
+        GENERAL_PURPOSE_FLAG
+    } else {
+        GENERAL_PURPOSE_FLAG | UTF8_ENCODING_FLAG
+    }
+}
+
 /// ZIP version needed to extract (2.0 = supports DEFLATE)
 pub const VERSION_NEEDED: u16 = 20;
 
@@ -99,6 +120,20 @@ impl LocalFileHeader {
             filename_len,
             extra_len: 0,
         }
+    }
+
+    /// Set the general purpose bit flag.
+    pub fn with_general_flag(mut self, flag: u16) -> Self {
+        self.general_flag = flag;
+        self
+    }
+
+    /// Set CRC32, compressed size, and uncompressed size.
+    pub fn with_sizes(mut self, crc32: u32, compressed_size: u32, uncompressed_size: u32) -> Self {
+        self.crc32 = crc32;
+        self.compressed_size = compressed_size;
+        self.uncompressed_size = uncompressed_size;
+        self
     }
 
     /// Serialize header to bytes (little-endian)
@@ -191,6 +226,12 @@ impl CentralDirHeader {
             external_attr: 0,
             local_header_offset,
         }
+    }
+
+    /// Set the general purpose bit flag.
+    pub fn with_general_flag(mut self, flag: u16) -> Self {
+        self.general_flag = flag;
+        self
     }
 
     /// Set CRC32, compressed size, and uncompressed size.

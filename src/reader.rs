@@ -3,7 +3,7 @@
 use crate::error::{Error, Result, ValidationError};
 use crate::spec::{
     CENTRAL_DIR_HEADER_SIG, COMPRESSION_METHOD_DEFLATE, DOS_DATE, DOS_TIME,
-    END_OF_CENTRAL_DIR_SIG, GENERAL_PURPOSE_FLAG,
+    END_OF_CENTRAL_DIR_SIG, GENERAL_PURPOSE_FLAG, UTF8_ENCODING_FLAG,
 };
 use crc32fast::Hasher;
 
@@ -52,8 +52,8 @@ impl TorrentZipValidator {
         }
 
         // Find EOCD (search backwards from end)
-        let eocd_offset = find_eocd(&data)?;
-        let (cd_offset, cd_size, comment) = parse_eocd(&data, eocd_offset)?;
+        let eocd_offset = find_eocd(data)?;
+        let (cd_offset, cd_size, comment) = parse_eocd(data, eocd_offset)?;
 
         // Parse and validate archive comment
         let torrentzip_crc32 = parse_torrentzip_comment(&comment);
@@ -63,7 +63,7 @@ impl TorrentZipValidator {
         }
 
         // Compute CRC32 of central directory
-        let computed_crc32 = compute_cd_crc32(&data, cd_offset, cd_size);
+        let computed_crc32 = compute_cd_crc32(data, cd_offset, cd_size);
 
         // Validate comment CRC32 matches
         if let Some(expected_crc) = torrentzip_crc32 {
@@ -82,7 +82,7 @@ impl TorrentZipValidator {
 
         while pos < cd_end {
             let (name, entry_size, validation_errs) =
-                parse_central_dir_entry(&data, pos)?;
+                parse_central_dir_entry(data, pos)?;
             files.push(name.clone());
             errors.extend(validation_errs);
 
@@ -220,8 +220,12 @@ fn parse_central_dir_entry(
         errors.push(ValidationError::WrongCompressionMethod(compression));
     }
 
-    // Check general purpose bit flag (bit 1 must be set for max compression)
-    if general_flag != GENERAL_PURPOSE_FLAG {
+    // Check general purpose bit flag (bit 1 must be set for max compression).
+    // Bit 11 (UTF-8 / EFS) is accepted alongside the legacy flag: archives
+    // written for non-ASCII filenames carry it (see spec::general_purpose_flag_for).
+    if general_flag != GENERAL_PURPOSE_FLAG
+        && general_flag != (GENERAL_PURPOSE_FLAG | UTF8_ENCODING_FLAG)
+    {
         errors.push(ValidationError::WrongGeneralFlag(general_flag));
     }
 

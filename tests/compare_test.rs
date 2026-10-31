@@ -17,7 +17,7 @@ fn test_torrentzip_structure() {
     let crc = tz.torrentzip_crc32().expect("Should have CRC32 after finish");
     
     // Verify ZIP structure
-    assert!(buffer.len() > 0, "Buffer should not be empty");
+    assert!(!buffer.is_empty(), "Buffer should not be empty");
     
     // Check local file header signature
     assert_eq!(&buffer[0..4], &[0x50, 0x4b, 0x03, 0x04], "Should have local file header signature");
