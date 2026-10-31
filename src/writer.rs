@@ -2,20 +2,29 @@
 
 use std::io::Write;
 
+use crc32fast::Hasher as CrcHasher;
 use flate2::write::DeflateEncoder;
 use flate2::Compression;
 
-use crate::crc::compute_central_directory_crc32;
 use crate::error::{Error, Result};
-use crate::spec::{make_torrentzip_comment, CentralDirHeader, EndOfCentralDir, LocalFileHeader};
+use crate::spec::{
+    general_purpose_flag_for, make_torrentzip_comment, CentralDirHeader, EndOfCentralDir,
+    LocalFileHeader,
+};
 
 /// Internal representation of a file entry being written.
+///
+/// Only the compressed bytes are retained; the uncompressed copy is dropped
+/// as soon as it has been hashed and deflated, so an in-progress archive
+/// costs one compressed copy per file instead of two full copies plus the
+/// finished archive.
 struct FileEntry {
     name: String,
     name_lower: String,
-    data: Vec<u8>,
     crc32: u32,
+    uncompressed_size: u32,
     compressed: Vec<u8>,
+    general_flag: u16,
 }
 
 /// TorrentZip-compliant ZIP file writer.
@@ -69,13 +78,9 @@ impl<W: Write> TorrentZipWriter<W> {
         let normalized_name = name.replace('\\', "/");
 
         // Compute CRC32 of uncompressed data
-        let crc32 = if data.is_empty() {
-            0
-        } else {
-            let mut hasher = crc32fast::Hasher::new();
-            hasher.update(data);
-            hasher.finalize()
-        };
+        let mut crc_hasher = CrcHasher::new();
+        crc_hasher.update(data);
+        let crc32 = crc_hasher.finalize();
 
         // Compress with DEFLATE level 9
         let compressed = if data.is_empty() {
@@ -89,9 +94,13 @@ impl<W: Write> TorrentZipWriter<W> {
         let entry = FileEntry {
             name: normalized_name.clone(),
             name_lower: normalized_name.to_lowercase(),
-            data: data.to_vec(),
             crc32,
+            uncompressed_size: data.len() as u32,
             compressed,
+            // ASCII names keep the legacy trrntzip flag so archives stay
+            // byte-identical; non-ASCII names set bit 11 (UTF-8 / EFS) so
+            // standard ZIP tools decode them instead of assuming CP437.
+            general_flag: general_purpose_flag_for(&normalized_name),
         };
 
         self.entries.push(entry);
@@ -107,77 +116,71 @@ impl<W: Write> TorrentZipWriter<W> {
         // Sort entries by lowercase filename
         self.entries.sort_by(|a, b| a.name_lower.cmp(&b.name_lower));
 
-        // Build the entire ZIP in memory first
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Track local header offsets for central directory
-        let mut local_offsets: Vec<(String, u32)> = Vec::new();
+        // Stream the archive straight to the writer instead of assembling it
+        // in a second full-archive buffer: local file headers and compressed
+        // data go out in sorted order while their offsets are recorded, and
+        // the central directory CRC32 is computed incrementally as those
+        // bytes stream out. The per-entry central-directory lookup is gone
+        // too (offsets were recorded in this same order).
+        let mut out = std::io::BufWriter::with_capacity(1 << 20, &mut self.writer);
+        let mut local_offsets: Vec<u32> = Vec::with_capacity(self.entries.len());
         let mut pos: u32 = 0;
 
         // Write local file headers + data
         for entry in &self.entries {
-            local_offsets.push((entry.name.clone(), pos));
+            local_offsets.push(pos);
 
-            // Write local file header
-            let header = LocalFileHeader::new_torrentzip(entry.name.len() as u16);
-            let mut header_bytes = header.to_bytes().to_vec();
+            let header = LocalFileHeader::new_torrentzip(entry.name.len() as u16)
+                .with_general_flag(entry.general_flag)
+                .with_sizes(
+                    entry.crc32,
+                    entry.compressed.len() as u32,
+                    entry.uncompressed_size,
+                );
 
-            // Update with actual values
-            let uncompressed_size = entry.data.len() as u32;
-            let compressed_size = entry.compressed.len() as u32;
-
-            // Update CRC32, compressed size, uncompressed size
-            header_bytes[14..18].copy_from_slice(&entry.crc32.to_le_bytes());
-            header_bytes[18..22].copy_from_slice(&compressed_size.to_le_bytes());
-            header_bytes[22..26].copy_from_slice(&uncompressed_size.to_le_bytes());
-
-            buffer.extend_from_slice(&header_bytes);
-            buffer.extend_from_slice(entry.name.as_bytes());
-            buffer.extend_from_slice(&entry.compressed);
+            out.write_all(&header.to_bytes())?;
+            out.write_all(entry.name.as_bytes())?;
+            out.write_all(&entry.compressed)?;
 
             pos += LocalFileHeader::SIZE as u32
                 + entry.name.len() as u32
-                + compressed_size;
+                + entry.compressed.len() as u32;
         }
 
         // Record central directory offset
-        let cd_offset = buffer.len() as u32;
-        let cd_start = buffer.len();
+        let cd_offset = pos;
 
-        // Write central directory headers
-        for (name, local_offset) in &local_offsets {
-            let entry = self
-                .entries
-                .iter()
-                .find(|e| &e.name == name)
-                .unwrap();
+        // Write central directory headers, hashing them as they stream out
+        let mut cd_hasher = CrcHasher::new();
+        let mut cd_size: u32 = 0;
+        for (entry, &local_offset) in self.entries.iter().zip(&local_offsets) {
+            let header = CentralDirHeader::new_torrentzip(entry.name.len() as u16, local_offset)
+                .with_general_flag(entry.general_flag)
+                .with_sizes(
+                    entry.crc32,
+                    entry.compressed.len() as u32,
+                    entry.uncompressed_size,
+                );
 
-            let uncompressed_size = entry.data.len() as u32;
-            let compressed_size = entry.compressed.len() as u32;
-
-            let header = CentralDirHeader::new_torrentzip(name.len() as u16, *local_offset)
-                .with_sizes(entry.crc32, compressed_size, uncompressed_size);
-
-            buffer.extend_from_slice(&header.to_bytes());
-            buffer.extend_from_slice(name.as_bytes());
+            let mut chunk = Vec::with_capacity(CentralDirHeader::SIZE + entry.name.len());
+            chunk.extend_from_slice(&header.to_bytes());
+            chunk.extend_from_slice(entry.name.as_bytes());
+            cd_hasher.update(&chunk);
+            cd_size += chunk.len() as u32;
+            out.write_all(&chunk)?;
         }
 
-        let cd_size = (buffer.len() - cd_start) as u32;
-
-        // Compute CRC32 of central directory
-        let tz_crc32 = compute_central_directory_crc32(&buffer[cd_start..]);
+        let tz_crc32 = cd_hasher.finalize();
 
         // Write EOCD
         let num_entries = self.entries.len() as u16;
         let eocd = EndOfCentralDir::new_torrentzip(num_entries, cd_size, cd_offset);
-        buffer.extend_from_slice(&eocd.to_bytes());
+        out.write_all(&eocd.to_bytes())?;
 
         // Write TorrentZip comment
         let comment = make_torrentzip_comment(tz_crc32);
-        buffer.extend_from_slice(&comment);
-
-        // Write final buffer to output
-        self.writer.write_all(&buffer)?;
+        out.write_all(&comment)?;
+        out.flush()?;
 
         self.torrentzip_crc32 = Some(tz_crc32);
         self.finished = true;

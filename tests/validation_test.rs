@@ -20,12 +20,16 @@ fn test_byte_identical_single_file() {
     let mut buffer = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer);
-        tz.add_file("at-6-1_a.bin", &file_data).expect("Failed to add file");
+        tz.add_file("at-6-1_a.bin", &file_data)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
     assert_eq!(original.len(), buffer.len(), "ZIP sizes should match");
-    assert_eq!(original, buffer, "Generated ZIP should match original byte-for-byte");
+    assert_eq!(
+        original, buffer,
+        "Generated ZIP should match original byte-for-byte"
+    );
 }
 
 #[test]
@@ -34,7 +38,8 @@ fn test_byte_identical_empty_file() {
     let mut buffer1 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer1);
-        tz.add_file("empty.txt", &[]).expect("Failed to add empty file");
+        tz.add_file("empty.txt", &[])
+            .expect("Failed to add empty file");
         tz.finish().expect("Failed to finish");
     }
 
@@ -42,11 +47,15 @@ fn test_byte_identical_empty_file() {
     let mut buffer2 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer2);
-        tz.add_file("empty.txt", &[]).expect("Failed to add empty file");
+        tz.add_file("empty.txt", &[])
+            .expect("Failed to add empty file");
         tz.finish().expect("Failed to finish");
     }
 
-    assert_eq!(buffer1, buffer2, "Empty file should produce identical output");
+    assert_eq!(
+        buffer1, buffer2,
+        "Empty file should produce identical output"
+    );
 }
 
 #[test]
@@ -59,9 +68,12 @@ fn test_byte_identical_multiple_files() {
     let mut buffer1 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer1);
-        tz.add_file("z_file.txt", file3).expect("Failed to add file");
-        tz.add_file("a_file.txt", file1).expect("Failed to add file");
-        tz.add_file("m_file.txt", file2).expect("Failed to add file");
+        tz.add_file("z_file.txt", file3)
+            .expect("Failed to add file");
+        tz.add_file("a_file.txt", file1)
+            .expect("Failed to add file");
+        tz.add_file("m_file.txt", file2)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
@@ -69,13 +81,19 @@ fn test_byte_identical_multiple_files() {
     let mut buffer2 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer2);
-        tz.add_file("z_file.txt", file3).expect("Failed to add file");
-        tz.add_file("a_file.txt", file1).expect("Failed to add file");
-        tz.add_file("m_file.txt", file2).expect("Failed to add file");
+        tz.add_file("z_file.txt", file3)
+            .expect("Failed to add file");
+        tz.add_file("a_file.txt", file1)
+            .expect("Failed to add file");
+        tz.add_file("m_file.txt", file2)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
-    assert_eq!(buffer1, buffer2, "Multiple files should produce identical output");
+    assert_eq!(
+        buffer1, buffer2,
+        "Multiple files should produce identical output"
+    );
 
     // Verify files are sorted by lowercase name
     let result = TorrentZipValidator::validate(&buffer1[..]).expect("Validation failed");
@@ -108,7 +126,8 @@ fn test_validate_generated_torrentzip() {
     let mut buffer = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer);
-        tz.add_file("at-6-1_a.bin", &file_data).expect("Failed to add file");
+        tz.add_file("at-6-1_a.bin", &file_data)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
@@ -125,7 +144,8 @@ fn test_validate_crc32_matches() {
 
     let mut buffer = Vec::new();
     let mut tz = TorrentZipWriter::new(&mut buffer);
-    tz.add_file("at-6-1_a.bin", &file_data).expect("Failed to add file");
+    tz.add_file("at-6-1_a.bin", &file_data)
+        .expect("Failed to add file");
     tz.finish().expect("Failed to finish");
     let tz_crc = tz.torrentzip_crc32().expect("Should have CRC32");
 
@@ -197,7 +217,10 @@ fn test_validate_non_torrentzip_no_comment() {
     let result = TorrentZipValidator::validate(&buffer[..]).expect("Validation failed");
 
     assert!(!result.is_valid, "Non-TorrentZip should fail validation");
-    assert!(result.errors.iter().any(|e| matches!(e, tzip::ValidationError::InvalidComment)));
+    assert!(result
+        .errors
+        .iter()
+        .any(|e| matches!(e, tzip::ValidationError::InvalidComment)));
 }
 
 #[test]
@@ -207,7 +230,8 @@ fn test_validate_corrupted_crc() {
     let mut buffer = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer);
-        tz.add_file("at-6-1_a.bin", &file_data).expect("Failed to add file");
+        tz.add_file("at-6-1_a.bin", &file_data)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
@@ -216,7 +240,7 @@ fn test_validate_corrupted_crc() {
     // Change first hex digit of CRC32
     let comment_start = buffer.len() - 22;
     let crc_start = comment_start + 14; // Position of first CRC hex digit
-    
+
     // Swap 'F' <-> '0' (both valid hex)
     if buffer[crc_start] == b'F' {
         buffer[crc_start] = b'0';
@@ -228,7 +252,10 @@ fn test_validate_corrupted_crc() {
 
     assert!(!result.is_valid, "Corrupted CRC should fail validation");
     assert!(
-        result.errors.iter().any(|e| matches!(e, tzip::ValidationError::CommentCrcMismatch { .. })),
+        result
+            .errors
+            .iter()
+            .any(|e| matches!(e, tzip::ValidationError::CommentCrcMismatch { .. })),
         "Should have CommentCrcMismatch error, got: {:?}",
         result.errors
     );
@@ -263,27 +290,37 @@ fn test_path_normalization_backslashes() {
     let mut buffer1 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer1);
-        tz.add_file("subdir\\file.bin", b"data").expect("Failed to add file");
-        tz.add_file("nested\\deep\\file.bin", b"data2").expect("Failed to add file");
+        tz.add_file("subdir\\file.bin", b"data")
+            .expect("Failed to add file");
+        tz.add_file("nested\\deep\\file.bin", b"data2")
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
     let mut buffer2 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer2);
-        tz.add_file("subdir/file.bin", b"data").expect("Failed to add file");
-        tz.add_file("nested/deep/file.bin", b"data2").expect("Failed to add file");
+        tz.add_file("subdir/file.bin", b"data")
+            .expect("Failed to add file");
+        tz.add_file("nested/deep/file.bin", b"data2")
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
     // Both should produce identical output (backslashes normalized to forward slashes)
-    assert_eq!(buffer1, buffer2, "Backslashes should be normalized to forward slashes");
+    assert_eq!(
+        buffer1, buffer2,
+        "Backslashes should be normalized to forward slashes"
+    );
 
     // Validate the result - files should have forward slashes
     let result = TorrentZipValidator::validate(&buffer1[..]).expect("Validation failed");
     assert!(result.is_valid, "Should be valid TorrentZip");
     // Files are sorted by lowercase name
-    assert_eq!(result.files, vec!["nested/deep/file.bin", "subdir/file.bin"]);
+    assert_eq!(
+        result.files,
+        vec!["nested/deep/file.bin", "subdir/file.bin"]
+    );
 }
 
 #[test]
@@ -294,18 +331,23 @@ fn test_path_normalization_deterministic() {
     let mut buffer1 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer1);
-        tz.add_file("path\\to\\file.txt", file_data).expect("Failed to add file");
+        tz.add_file("path\\to\\file.txt", file_data)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
     let mut buffer2 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer2);
-        tz.add_file("path/to/file.txt", file_data).expect("Failed to add file");
+        tz.add_file("path/to/file.txt", file_data)
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
-    assert_eq!(buffer1, buffer2, "Normalized paths should produce identical output");
+    assert_eq!(
+        buffer1, buffer2,
+        "Normalized paths should produce identical output"
+    );
 }
 
 // ============================================================================
@@ -321,7 +363,8 @@ fn test_determinism_same_content() {
         .map(|_| {
             let mut buffer = Vec::new();
             let mut tz = TorrentZipWriter::new(&mut buffer);
-            tz.add_file("at-6-1_a.bin", &file_data).expect("Failed to add file");
+            tz.add_file("at-6-1_a.bin", &file_data)
+                .expect("Failed to add file");
             tz.finish().expect("Failed to finish");
             buffer
         })
@@ -343,9 +386,12 @@ fn test_determinism_case_sorting() {
     let mut buffer1 = Vec::new();
     {
         let mut tz = TorrentZipWriter::new(&mut buffer1);
-        tz.add_file("Z_FILE.BIN", b"data1").expect("Failed to add file");
-        tz.add_file("a_file.bin", b"data2").expect("Failed to add file");
-        tz.add_file("M_File.Bin", b"data3").expect("Failed to add file");
+        tz.add_file("Z_FILE.BIN", b"data1")
+            .expect("Failed to add file");
+        tz.add_file("a_file.bin", b"data2")
+            .expect("Failed to add file");
+        tz.add_file("M_File.Bin", b"data3")
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
@@ -353,13 +399,19 @@ fn test_determinism_case_sorting() {
     {
         let mut tz = TorrentZipWriter::new(&mut buffer2);
         // Add in different order
-        tz.add_file("M_File.Bin", b"data3").expect("Failed to add file");
-        tz.add_file("Z_FILE.BIN", b"data1").expect("Failed to add file");
-        tz.add_file("a_file.bin", b"data2").expect("Failed to add file");
+        tz.add_file("M_File.Bin", b"data3")
+            .expect("Failed to add file");
+        tz.add_file("Z_FILE.BIN", b"data1")
+            .expect("Failed to add file");
+        tz.add_file("a_file.bin", b"data2")
+            .expect("Failed to add file");
         tz.finish().expect("Failed to finish");
     }
 
-    assert_eq!(buffer1, buffer2, "Files should be sorted case-insensitively");
+    assert_eq!(
+        buffer1, buffer2,
+        "Files should be sorted case-insensitively"
+    );
 
     // Validate the result
     let result = TorrentZipValidator::validate(&buffer1[..]).expect("Validation failed");

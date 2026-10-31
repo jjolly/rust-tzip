@@ -76,7 +76,7 @@ where
 
     // Sort files by lowercase name
     let mut sorted_files: Vec<_> = files.into_iter().collect();
-    sorted_files.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    sorted_files.sort_by_key(|a| a.0.to_lowercase());
 
     for (name, data) in sorted_files {
         tz.add_file(&name, &data)?;

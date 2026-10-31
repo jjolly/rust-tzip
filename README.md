@@ -13,6 +13,8 @@ TorrentZip is a ZIP file format specification that ensures **byte-identical outp
 ## Features
 
 - ✅ **Byte-identical output** - Matches original trrntzip tools exactly
+- ✅ **Streaming writer** - Writes to any `io::Write` without buffering the whole archive
+- ✅ **UTF-8 filenames** - Non-ASCII names set the ZIP EFS flag (bit 11); ASCII archives stay byte-identical to trrntzip
 - ✅ **Full validation** - Verify existing TorrentZip files
 - ✅ **Zero unsafe code** - 100% safe Rust
 - ✅ **No dependencies on external tools** - Pure Rust + zlib
@@ -77,6 +79,16 @@ This crate implements the full TorrentZip specification:
 | File order | Sorted by lowercase filename |
 | Archive comment | `TORRENTZIPPED-{CRC32}` (uppercase hex) |
 | CRC32 source | CRC32 of central directory headers |
+
+### Filename encoding
+
+ASCII filenames use the legacy trrntzip general-purpose flag (`0x0002`), so
+archives remain **byte-identical** to the reference implementation — changing
+the flag would change every header byte and, with them, the torrent piece
+hashes of every existing TorrentZip archive. Non-ASCII filenames (CJK,
+Cyrillic, accented Latin, …) additionally set bit 11 (`0x0800`, the APPNOTE
+6.3.0 "language encoding flag"), marking the name as UTF-8 so standard ZIP
+tools decode it instead of assuming CP437. The validator accepts both forms.
 
 ### Why These Constraints?
 
